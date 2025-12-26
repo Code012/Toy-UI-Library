@@ -1,7 +1,14 @@
 /*  date = December 25th 2025 08:52 PM */
 
+#include "context_cracking.h"
 #include "main.h"
 
+//////////////////////////////
+//- Globals
+GlobalState global;
+
+////////////////////////////////////
+//- Helpers
 Rectangle RectangleMake(int l, int r, int t, int b)
 {
 	return Rectangle{l, r, t, b};
@@ -75,7 +82,144 @@ void StringCopy(char **destination, size_t *destinationBytes, const char *source
 	memcpy(*destination, source, sourceBytes);
 }
 
+////////////////////////////////////
+//- Platform code
+
+#if OS_WINDOWS
+LRESULT CALLBACK _WindowProcedure(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
+{
+	Window *window = (Window *) GetWindowLongPtr(hwnd, GWLP_USERDATA);
+
+	if (!window)
+	{
+		return DefWindowProc(hwnd, message, wParam, lParam);
+	}
+
+	if (message == WM_CLOSE)
+	{
+		PostQuitMessage(0);
+	}
+	else if (message == WM_SIZE)
+	{
+		RECT client;
+		GetClientRect(hwnd, &client);
+		window->width = client.right;
+		window->height = client.bottom;
+	}
+	else
+	{
+		return DefWindowProc(hwnd, message, wParam, lParam);
+	}
+
+	return 0;
+}
+
+Window *WindowCreate(const char *cTitle, int width, int height)
+{
+	Window *window = (Window *) calloc(1, sizeof(Window));
+	global.windowCount++;
+	global.windows = (Window **)realloc(global.windows, sizeof(Window *) * global.windowCount);
+	global.windows[global.windowCount - 1] = window;
+
+	window->hwnd = CreateWindow("UILibraryTutorial", cTitle, WS_OVERLAPPEDWINDOW,
+					CW_USEDEFAULT, CW_USEDEFAULT, width, height, NULL, NULL, NULL, NULL);
+	SetWindowLongPtr(window->hwnd, GWLP_USERDATA, (LONG_PTR) window);
+	ShowWindow(window->hwnd, SW_SHOW);
+	PostMessage(window->hwnd, WM_SIZE, 0, 0);
+	return window;
+}
+
+int MessageLoop()
+{
+	MSG message = {};
+
+	while (GetMessage(&message, NULL, 0, 0))
+	{
+		TranslateMessage(&message);
+		DispatchMessage(&message);
+	}
+
+	return message.wParam;
+}
+
+void Initialise()
+{
+	WNDCLASS windowClass = {};
+	windowClass.lpfnWndProc = _WindowProcedure;
+	windowClass.hCursor = LoadCursor(NULL, IDC_ARROW);
+	windowClass.lpszClassName = "UILibraryTutorial";
+	RegisterClass(&windowClass);
+}
+
+#endif
+
+#if OS_LINUX
+
+Window *_FindWindow(X11Window window) {
+	for (uintptr_t i = 0; i < global.windowCount; i++) {
+		if (global.windows[i]->window == window) {
+			return global.windows[i];
+		}
+	}
+
+	return NULL;
+}
+
+Window *WindowCreate(const char *cTitle, int width, int height) {
+	Window *window = (Window *) calloc(1, sizeof(Window));
+	global.windowCount++;
+	global.windows = realloc(global.windows, sizeof(Window *) * global.windowCount);
+	global.windows[global.windowCount - 1] = window;
+
+	XSetWindowAttributes attributes = {};
+	window->window = XCreateWindow(global.display, DefaultRootWindow(global.display), 0, 0, width, height, 0, 0, 
+		InputOutput, CopyFromParent, CWOverrideRedirect, &attributes);
+	XStoreName(global.display, window->window, cTitle);
+	XSelectInput(global.display, window->window, SubstructureNotifyMask | ExposureMask | PointerMotionMask 
+		| ButtonPressMask | ButtonReleaseMask | KeyPressMask | KeyReleaseMask | StructureNotifyMask
+		| EnterWindowMask | LeaveWindowMask | ButtonMotionMask | KeymapStateMask | FocusChangeMask | PropertyChangeMask);
+	XMapRaised(global.display, window->window);
+	XSetWMProtocols(global.display, window->window, &global.windowClosedID, 1);
+	window->image = XCreateImage(global.display, global.visual, 24, ZPixmap, 0, NULL, 10, 10, 32, 0);
+	return window;
+}
+
+int MessageLoop() {
+	while (true) {
+		XEvent event;
+		XNextEvent(global.display, &event);
+
+		if (event.type == ClientMessage && (Atom) event.xclient.data.l[0] == global.windowClosedID) {
+			return 0;
+		} else if (event.type == ConfigureNotify) {
+			Window *window = _FindWindow(event.xconfigure.window);
+			if (!window) continue;
+
+			if (window->width != event.xconfigure.width || window->height != event.xconfigure.height) {
+				window->width = event.xconfigure.width;
+				window->height = event.xconfigure.height;
+				window->image->width = window->width;
+				window->image->height = window->height;
+				window->image->bytes_per_line = window->width * 4;
+				window->image->data = (char *) window->bits;
+			}
+		}
+	}
+}
+
+void Initialise() {
+	global.display = XOpenDisplay(NULL);
+	global.visual = XDefaultVisual(global.display, 0);
+	global.windowClosedID = XInternAtom(global.display, "WM_DELETE_WINDOW", 0);
+}
+
+#endif
+
 int main(void)
 {
-	return 0;
+	Initialise();
+	WindowCreate("Hello, world", 300, 200);
+	WindowCreate("Another window", 300, 200);
+
+	return MessageLoop();	// Pass control over to the platform layer until the application exits.
 }
