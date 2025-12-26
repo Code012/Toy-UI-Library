@@ -29,8 +29,19 @@ struct Rectangle
 	int l, r, t, b;
 };
 
+struct Element
+{
+	uint32_t flags;			// First 16 bits are specific to the type of element (button, label, etc.). The higher order 16 bits are common to all elements.
+	uint32_t childCount;	// The number of child elements
+	Element *parent;
+	Element **children;
+	struct Window *window;	// Window at the root of the heirarchy
+	void *cp;				// Context pointer (for the user of the library)
+};
+
 struct Window
 {
+	Element e;
 	uint32_t *bits;		// The bitmap image of the window's content
 	int width, height;	// drawable size
 
@@ -58,6 +69,15 @@ struct GlobalState
 	Atom windowClosedID;
 #endif
 };
+
+// @os_per_backend functions
+void Initialise();
+int MessageLoop();
+Window *WindowCreate(const char *cTitle, int width, int height);
+
+////////////////////////////////////
+//- Core UI Logic
+Element *ElementCreate(size_t bytes, Element *parent, uint32_t flags);
 
 ////////////////////////////////////
 //- Helpers

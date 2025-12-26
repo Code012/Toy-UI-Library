@@ -8,6 +8,25 @@
 GlobalState global;
 
 ////////////////////////////////////
+//- Core UI Logic
+Element *ElementCreate(size_t bytes, Element *parent, uint32_t flags)
+{
+	Element *element = (Element *) calloc(1, bytes);
+	element->flags = flags;
+
+	if (parent)		// element is not the root
+	{
+		element->window = parent->window;
+		element->parent = parent;
+		parent->childCount++;
+		parent->children = (Element **)realloc(parent->children, sizeof(Element *) * parent->childCount);
+		parent->children[parent->childCount - 1] = element;
+	}
+	return element;
+}
+
+
+////////////////////////////////////
 //- Helpers
 Rectangle RectangleMake(int l, int r, int t, int b)
 {
@@ -116,7 +135,8 @@ LRESULT CALLBACK _WindowProcedure(HWND hwnd, UINT message, WPARAM wParam, LPARAM
 
 Window *WindowCreate(const char *cTitle, int width, int height)
 {
-	Window *window = (Window *) calloc(1, sizeof(Window));
+	// Window *window = (Window *) calloc(1, sizeof(Window));
+	Window *window = (Window *) ElementCreate(sizeof(Window), NULL, 0);
 	global.windowCount++;
 	global.windows = (Window **)realloc(global.windows, sizeof(Window *) * global.windowCount);
 	global.windows[global.windowCount - 1] = window;
@@ -166,7 +186,8 @@ Window *_FindWindow(X11Window window) {
 }
 
 Window *WindowCreate(const char *cTitle, int width, int height) {
-	Window *window = (Window *) calloc(1, sizeof(Window));
+	// Window *window = (Window *) calloc(1, sizeof(Window));
+	Window *window = (Window *) ElementCreate(sizeof(Window), NULL, 0);
 	global.windowCount++;
 	global.windows = realloc(global.windows, sizeof(Window *) * global.windowCount);
 	global.windows[global.windowCount - 1] = window;
