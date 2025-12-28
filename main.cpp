@@ -9,10 +9,46 @@ GlobalState global;
 
 ////////////////////////////////////
 //- Core UI Logic
-Element *ElementCreate(size_t bytes, Element *parent, uint32_t flags)
+
+// Two-layer message dispatch with user override and class falback
+// Dispatch a messeage to an element
+// User handler is given first refusal:
+// 	- non-zero return means "handled" -> stop dispatch
+// 	- zero return means "not handled" -> fall through
+// If the user handler declines, the class (default) handler runs
+// The return value indicates whether the message was untlimately handled
+int ElementMessage(Element *element, Message message, int di, void *dp)
+{
+	if (element->messageUser)
+	{
+		int result = element->messageUser(element, message, di, dp);
+
+		if (result)
+		{
+			return result;
+		}
+		else
+		{
+			// keep going!
+		}
+	}
+
+	if (element->messageClass)
+	{
+		return element->messageClass(element, message, di, dp);
+	}
+	else
+	{
+		return 0;
+	}
+}
+
+
+Element *ElementCreate(size_t bytes, Element *parent, uint32_t flags, MessageHandler messageClass)
 {
 	Element *element = (Element *) calloc(1, bytes);
 	element->flags = flags;
+	element->messageClass = messageClass;
 
 	if (parent)		// element is not the root
 	{
@@ -133,10 +169,20 @@ LRESULT CALLBACK _WindowProcedure(HWND hwnd, UINT message, WPARAM wParam, LPARAM
 	return 0;
 }
 
+int _WindowMessage(Element *element, Message message, int di, void *dp)
+{
+	(void) element;
+	(void) message;
+	(void) di;
+	(void) dp;
+
+	return 0;
+}
+
 Window *WindowCreate(const char *cTitle, int width, int height)
 {
 	// Window *window = (Window *) calloc(1, sizeof(Window));
-	Window *window = (Window *) ElementCreate(sizeof(Window), NULL, 0);
+	Window *window = (Window *) ElementCreate(sizeof(Window), NULL, 0, _WindowMessage);
 	global.windowCount++;
 	global.windows = (Window **)realloc(global.windows, sizeof(Window *) * global.windowCount);
 	global.windows[global.windowCount - 1] = window;
@@ -185,9 +231,19 @@ Window *_FindWindow(X11Window window) {
 	return NULL;
 }
 
+int _WindowMessage(Element *element, Message message, int di, void *dp)
+{
+	(void) element;
+	(void) message;
+	(void) di;
+	(void) dp;
+
+	return 0;
+}
+
 Window *WindowCreate(const char *cTitle, int width, int height) {
 	// Window *window = (Window *) calloc(1, sizeof(Window));
-	Window *window = (Window *) ElementCreate(sizeof(Window), NULL, 0);
+	Window *window = (Window *) ElementCreate(sizeof(Window), NULL, 0, _WindowMessage);
 	global.windowCount++;
 	global.windows = realloc(global.windows, sizeof(Window *) * global.windowCount);
 	global.windows[global.windowCount - 1] = window;
@@ -236,11 +292,45 @@ void Initialise() {
 
 #endif
 
+////////////////////////////////////
+//- Test Usage Code
+#include <stdio.h>
+
+Element *elementA, *elementB;
+
+int ElementAMessageClass(Element *element, Message message, int di, void *dp)
+{
+	(void) element;
+	printf("A class: %d, %d, %p\n", message, di, dp);
+	return message == MSG_USER + 1;
+}
+
+int ElementAMessageUser(Element *element, Message message, int di, void *dp) {
+	(void) element;
+	printf("A user: %d, %d, %p\n", message, di, dp);
+	return message == MSG_USER + 2;
+}
+
+int ElementBMessageClass(Element *element, Message message, int di, void *dp) {
+	(void) element;
+	printf("B class: %d, %d, %p\n", message, di, dp);
+	return 0;
+}
+
 int main(void)
 {
 	Initialise();
-	WindowCreate("Hello, world", 300, 200);
-	WindowCreate("Another window", 300, 200);
+	Window *window = WindowCreate("Hello, world", 300, 200);
+	elementA = ElementCreate(sizeof(Element), &window->e, 0, ElementAMessageClass);
+	elementA->messageUser = ElementAMessageUser;
+	elementB = ElementCreate(sizeof(Element), elementA, 0, ElementBMessageClass);
+	printf("%d\n", ElementMessage(elementA, static_cast<Message>(MSG_USER + 1), 1, NULL));
+	printf("%d\n", ElementMessage(elementA, static_cast<Message>(MSG_USER + 2), 2, NULL));
+	printf("%d\n", ElementMessage(elementA, static_cast<Message>(MSG_USER + 3), 3, NULL));
+	printf("%d\n", ElementMessage(elementB, static_cast<Message>(MSG_USER + 1), 1, NULL));
+	printf("%d\n", ElementMessage(elementB, static_cast<Message>(MSG_USER + 2), 2, NULL));
+	printf("%d\n", ElementMessage(elementB, static_cast<Message>(MSG_USER + 3), 3, NULL));
+
 
 	return MessageLoop();	// Pass control over to the platform layer until the application exits.
 }
