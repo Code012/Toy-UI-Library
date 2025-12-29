@@ -6,8 +6,11 @@ Window element has exactly one child, the layout root. It takes up the full boun
 It is up to the user (of the library) to attach some elements to the window that will provide the layout they want, e.g. the `layout root`
 
  Window element
+
  └─ layout root (window->element->children[0])
+
  	└─ rest of UI
+
 
 ## Part 4: Messaging Infrastructure
 
