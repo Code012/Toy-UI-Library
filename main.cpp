@@ -10,6 +10,34 @@ GlobalState global;
 ////////////////////////////////////
 //- Core UI Logic
 
+// Invariant:  each element is responsible for the positioning of its children and nothing more.
+// Moves an element and triggers layout if needed
+void ElementMove(Element *element, Rectangle bounds, bool alwaysLayout)
+{
+	// save the previous visible area to detect changes
+	Rectangle oldClip = element->clip;
+	// compute the new visible region:
+	//	- element's bounds
+	// 	- clipped by parent's visible area
+	// Enforces clipping automatically
+	element->clip = RectangleIntersection(element->parent->clip, bounds);
+
+	// only re-layout if:
+	// 	- bounds changed, OR
+	// 	- visible region changed, OR
+	// 	- caller forces it (alwaysLayout)
+	// to prevent unnecessary layout propagration
+	if (!RectangleEquals(element->bounds, bounds)
+					|| !RectangleEquals(element->clip, oldClip)
+					|| alwaysLayout)
+	{
+		// commit new bounds
+		element->bounds = bounds;
+		// notify the element: "Your bounds/clip changed; reposition your children"
+		ElementMessage(element, MSG_LAYOUT, 0, 0);
+	}
+}
+
 // Two-layer message dispatch with user override and class falback
 // Dispatch a messeage to an element
 // User handler is given first refusal:
@@ -156,10 +184,14 @@ LRESULT CALLBACK _WindowProcedure(HWND hwnd, UINT message, WPARAM wParam, LPARAM
 	}
 	else if (message == WM_SIZE)
 	{
+		OutputDebugStringA("WM_SIZE\n");
 		RECT client;
 		GetClientRect(hwnd, &client);
 		window->width = client.right;
 		window->height = client.bottom;
+		window->e.bounds = RectangleMake(0, window->width, 0, window->height);
+		window->e.clip = RectangleMake(0, window->width, 0, window->height);
+		ElementMessage(&window->e, MSG_LAYOUT, 0, 0);
 	}
 	else
 	{
@@ -171,10 +203,13 @@ LRESULT CALLBACK _WindowProcedure(HWND hwnd, UINT message, WPARAM wParam, LPARAM
 
 int _WindowMessage(Element *element, Message message, int di, void *dp)
 {
-	(void) element;
-	(void) message;
 	(void) di;
 	(void) dp;
+
+	if (message == MSG_LAYOUT && element->childCount)
+	{
+		ElementMove(element->children[0], element->bounds, false);
+	}
 
 	return 0;
 }
@@ -233,10 +268,13 @@ Window *_FindWindow(X11Window window) {
 
 int _WindowMessage(Element *element, Message message, int di, void *dp)
 {
-	(void) element;
-	(void) message;
 	(void) di;
 	(void) dp;
+
+	if (message == MSG_LAYOUT && element->childCount)
+	{
+		ElementMove(element->children[0], element->bounds, false);
+	}
 
 	return 0;
 }
@@ -279,6 +317,9 @@ int MessageLoop() {
 				window->image->height = window->height;
 				window->image->bytes_per_line = window->width * 4;
 				window->image->data = (char *) window->bits;
+				window->e.bounds = RectangleMake(0, window->width, 0, window->height);
+				window->e.clip = RectangleMake(0, window->width, 0, window->height);
+				ElementMessage(&window->e, MSG_LAYOUT, 0, 0);
 			}
 		}
 	}
@@ -324,12 +365,12 @@ int main(void)
 	elementA = ElementCreate(sizeof(Element), &window->e, 0, ElementAMessageClass);
 	elementA->messageUser = ElementAMessageUser;
 	elementB = ElementCreate(sizeof(Element), elementA, 0, ElementBMessageClass);
-	printf("%d\n", ElementMessage(elementA, static_cast<Message>(MSG_USER + 1), 1, NULL));
-	printf("%d\n", ElementMessage(elementA, static_cast<Message>(MSG_USER + 2), 2, NULL));
-	printf("%d\n", ElementMessage(elementA, static_cast<Message>(MSG_USER + 3), 3, NULL));
-	printf("%d\n", ElementMessage(elementB, static_cast<Message>(MSG_USER + 1), 1, NULL));
-	printf("%d\n", ElementMessage(elementB, static_cast<Message>(MSG_USER + 2), 2, NULL));
-	printf("%d\n", ElementMessage(elementB, static_cast<Message>(MSG_USER + 3), 3, NULL));
+	// printf("%d\n", ElementMessage(elementA, static_cast<Message>(MSG_USER + 1), 1, NULL));
+	// printf("%d\n", ElementMessage(elementA, static_cast<Message>(MSG_USER + 2), 2, NULL));
+	// printf("%d\n", ElementMessage(elementA, static_cast<Message>(MSG_USER + 3), 3, NULL));
+	// printf("%d\n", ElementMessage(elementB, static_cast<Message>(MSG_USER + 1), 1, NULL));
+	// printf("%d\n", ElementMessage(elementB, static_cast<Message>(MSG_USER + 2), 2, NULL));
+	// printf("%d\n", ElementMessage(elementB, static_cast<Message>(MSG_USER + 3), 3, NULL));
 
 
 	return MessageLoop();	// Pass control over to the platform layer until the application exits.

@@ -26,7 +26,15 @@
 
 enum Message
 {
+	// Framework Messages
+	//------------------
+	MSG_LAYOUT,
+	//------------------
+
+	// User Messages
+	//-----------------
 	MSG_USER,
+	//-----------------
 };
 
 struct Rectangle
@@ -63,6 +71,7 @@ struct Element
 {
 	uint32_t flags;			// First 16 bits are specific to the type of element (button, label, etc.). The higher order 16 bits are common to all elements.
 	uint32_t childCount;	// The number of child elements
+	Rectangle bounds, clip;	// bounds indicate where the element exists in the window. clip stores the subrectangle of the element's bounds that is actually visibile and interactable.
 	Element *parent;
 	Element **children;
 	struct Window *window;	// Window at the root of the heirarchy
@@ -111,6 +120,7 @@ Window *WindowCreate(const char *cTitle, int width, int height);
 //- Core UI Logic
 
 Element *ElementCreate(size_t bytes, Element *parent, uint32_t flags, MessageHandler messageClass);
+void ElementMove(Element *element, Rectangle bounds, bool alwaysLayout);
 int ElementMessage(Element *element, Message message, int di, void *dp);
 
 ////////////////////////////////////
