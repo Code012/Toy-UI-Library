@@ -1,5 +1,5 @@
 /*  date = December 25th 2025 08:54 PM */ 
-
+// main.h
 #include <stdint.h>
 #include <stddef.h>
 #include <cstring>
@@ -28,6 +28,7 @@ enum Message
 {
 	// Framework Messages
 	//------------------
+	MSG_PAINT,			// dp = pointer to Painter
 	MSG_LAYOUT,
 	//------------------
 
@@ -40,6 +41,13 @@ enum Message
 struct Rectangle
 {
 	int l, r, t, b;
+};
+
+struct Painter
+{
+	Rectangle clip;		// The rectangle the element should draw into
+	uint32_t *bits;		// The bitmap itself. bits[y * painter->width + x] gives the RGB value of pixel (x, y).
+	int width, height;	// width and height of bitmap
 };
 
 // element is the specific element that's receiving the message, making it possible
@@ -84,6 +92,7 @@ struct Window
 	Element e;
 	uint32_t *bits;		// The bitmap image of the window's content
 	int width, height;	// drawable size
+	Rectangle updateRegion;
 
 
 #if OS_WINDOWS
@@ -120,6 +129,7 @@ Window *WindowCreate(const char *cTitle, int width, int height);
 //- Core UI Logic
 
 Element *ElementCreate(size_t bytes, Element *parent, uint32_t flags, MessageHandler messageClass);
+void ElementRepaint(Element *element, Rectangle *region);
 void ElementMove(Element *element, Rectangle bounds, bool alwaysLayout);
 int ElementMessage(Element *element, Message message, int di, void *dp);
 
@@ -134,3 +144,5 @@ bool RectangleEquals(Rectangle a, Rectangle b); 			// Returns true if all sides 
 bool RectangleContains(Rectangle a, int x, int y); 			// Returns true if the pixel with its top-left at the given coordinate is contained inside the rectangle.
 
 void StringCopy(char **destination, size_t *destinationBytes, const char *source, ptrdiff_t sourceBytes);
+
+void DrawBlock(Painter *painter, Rectangle r, uint32_t fill);

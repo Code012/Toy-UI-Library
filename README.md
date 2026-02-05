@@ -79,3 +79,32 @@ This repeats recursively
 - Enture tree updates
 - All bounds and clips are valid
 - Rendering and hit-testing are now correct
+
+## Part 6: Painting
+
+The layout bounds for Element A (the root layout elemnt) are not exactly equal to the window's bounds because Element A is limited to the client rect and the window's bounds is the outer bounds of the entire window
+
+- A is pink rect covering entire screen
+- B is grey rect centred mid 
+- C is blue 
+- D is green
+
+##### Back buffer
+- Each window owns a pixel baxk buffer `window->bits` representing the entire client area.
+- UI elements render into this buffer
+- Pixel `(x, y)` in window space maps directly to: `bits[y * window->width + x]` this is how we can pass the rect coords into stretchdibits directly without issue 
+
+##### Dirty rectangle (`updateRegion`)
+- When elements change (layout, content, movement), they call `ElementRepaint`
+- This does **not repaint immediately**
+- Insteads, the affected rectangle is **unioned** (`RectangleBounding`) into `window->updateRegion`
+- `updateRegion` is the smallest rectangle containing all changes for the current update cycle
+
+##### Update phase (`_Update`)
+- Called at controlled points (e.g. on Windows after `WM_SIZE`; in later tutorials, after input processing).
+- If `updateRegion` is valid:
+  1. A `Painter` is set up with `clip = updateRegion`.
+  2. The element tree is recursively painted **only within that clip**, so only the pixels inside the dirty rectangle are modified in `window->bits`.
+  3. The rendered result is written into the back buffer; all pixels outside `updateRegion` are left untouched.
+  4. `_WindowEndPaint` copies **only the dirty rectangle** from the back buffer to the OS window (on Windows this is done via `StretchDIBits`), since updating anything else would be redundant.
+- Afterward, `updateRegion` is cleared, ready for the next update cycle.
