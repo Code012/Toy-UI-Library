@@ -231,9 +231,7 @@ bool RectangleEquals(Rectangle a, Rectangle b)
 // inside the rectangle.
 bool RectangleContains(Rectangle a, int x, int y)
 {
-	// (x, y) gives the top-left corner of the pixel. (treating pixel as 1x1 pixel square/rectangle: l,r,t,b [x, x), [y, y) )
-	// x ∈ [a.l, a.r)
-	// y ∈ [a.t, a.b)
+	// (x, y) gives the top-left corner of the pixel. (treating pixel as 1x1 pixel square/rectangle: [x, x+1), [y, y+1) )
 
 	// Therefore we use strict inequalities when comparing against the right 
 	// and bottom sides of the rectangle.
@@ -270,6 +268,70 @@ void DrawBlock(Painter *painter, Rectangle rectangle, uint32_t colour)
 	// (i.e. it's slightly faster this way)
 }
 
+void DrawRectangle(Painter *painter, Rectangle r, uint32_t mainColour, uint32_t borderColour)
+{
+	// r = RectangleIntersection(painter->clip, r);
+	// Have to pass in clipped rects ourselves I assume
+
+	// Borders
+	// Top-border
+	DrawBlock(painter, RectangleMake(r.l, r.r, r.t, r.t+1), borderColour);
+	// Left-border
+	DrawBlock(painter, RectangleMake(r.l, r.l+1, r.t+1, r.b-1), borderColour);	// doesn't draw corners
+	// Right-border
+	DrawBlock(painter, RectangleMake(r.r-1, r.r, r.t+1, r.b-1), borderColour);	// doesn't draw corners
+	// Bottom-border
+	DrawBlock(painter, RectangleMake(r.l, r.r, r.b-1, r.b), borderColour);
+
+	// Inner rect
+	DrawBlock(painter, RectangleMake(r.l+1, r.r-1, r.t+1, r.b-1), mainColour);
+}
+
+void DrawString(Painter *painter, Rectangle bounds, const char *string, size_t bytes, uint32_t colour, bool centerAlign) {
+	// Setup the clipping region
+	Rectangle oldClip = painter->clip;
+	painter->clip = RectangleIntersection(bounds, oldClip);
+
+	// Work out where to start drawing the text within the provided bounds
+	int x = bounds.l;
+	int y = (bounds.t + bounds.b - GLYPH_HEIGHT) / 2;
+	if (centerAlign) { x += (bounds.r - bounds.l - bytes * GLYPH_WIDTH) / 2; }
+
+	// for every character int he string...
+	for (uintptr_t i{}; i < bytes; ++i)
+	{
+		uint8_t c = string[i];
+		if (c > 127) c = '?'; // only support ASCII
+
+		// work out where the corresponding glyph is to be drawn.
+		Rectangle rectangle = RectangleIntersection(painter->clip, RectangleMake(x, x + 8, y, y + 16));
+		uint8_t const* data = (uint8_t const*) _font + c * 16;
+
+		// Blit the glyph bits
+		for (int i = rectangle.t; i < rectangle.b; ++i)
+		{
+			uint32_t* bits = painter->bits + i * painter->width + rectangle.l;
+			uint8_t byte = data[i - y];
+
+			for (int j = rectangle.l; j < rectangle.r; ++j)
+			{
+				if (byte & (1 << (j - x)))
+				{
+					*bits = colour;
+				}
+
+				++bits;
+			}
+		}
+
+		// Advance to the position of the next glyph.
+		x += GLYPH_WIDTH;
+
+	}
+
+	// Restore the old clipping region.
+	painter->clip = oldClip;
+}
 ////////////////////////////////////
 //- Platform code
 
@@ -345,7 +407,7 @@ void _WindowEndPaint(Window *window, Painter *painter)
 	info.biPlanes = 1, info.biBitCount = 32;
 	// Note: biHeight is positive, so the DIB is bottom-up.
 	// GDI treats y=0 as the bottom of the bitmap, while our renderer
-	// treats y=0 as the top. The unusual ySrc / SrcHeight values
+	// treats y=0 as the top. The unusual ySrc, SrcHeight values
 	// compensate for this inverted Y axis.
 	StretchDIBits(dc, 
 		window->updateRegion.l, window->updateRegion.t, 
@@ -499,62 +561,32 @@ void Initialise() {
 //- Test Usage Code
 #include <stdio.h>
 
-Element *elementA, *elementB, *elementC, *elementD;	// A is pink rect covering entire screen, B is grey rect centred mid, C is blue, D is green
-
-int ElementAMessage(Element *element, Message message, int di, void *dp) {
+int MyElementMessage(Element *element, Message message, int di, void *dp) {
 	(void) di;
 
-	Rectangle bounds = element->bounds;
-
 	if (message == MSG_PAINT) {
-		DrawBlock((Painter *) dp, bounds, 0xFF77FF);
+		DrawBlock((Painter *) dp, element->bounds, 0xFFCCFF);
+
+		for (int i = 0; i < 5; i++) {
+			for (int j = 0; j < 5; j++) {
+				DrawRectangle((Painter *) dp, RectangleMake(20 + j * 30, 40 + j * 30, 20 + i * 30, 40 + i * 30), 0xFFFFFF, 0x000000);
+			}
+		}
+
+		const char *message = "Hello, world!";
+
+		// Sillhouette for text
+		for (int i = -2; i <= 2; i++) {
+			for (int j = -2; j <= 2; j++) {
+				Rectangle rectangle = RectangleMake(element->bounds.l - j, element->bounds.r - j, 
+						element->bounds.t - i, element->bounds.b - i);
+				DrawString((Painter *) dp, rectangle, message, strlen(message), 0xFFFFFF, true);
+			}
+		}
+
+		DrawString((Painter *) dp, element->bounds, message, strlen(message), 0x000000, true);
 	} else if (message == MSG_LAYOUT) {
-		fprintf(stderr, "layout A with bounds (%d->%d;%d->%d)\n", bounds.l, bounds.r, bounds.t, bounds.b);
-		ElementMove(elementB, RectangleMake(bounds.l + 20, bounds.r - 20, bounds.t + 20, bounds.b - 20), false);
-	}
-
-	return 0;
-}
-
-int ElementBMessage(Element *element, Message message, int di, void *dp) {
-	(void) di;
-
-	Rectangle bounds = element->bounds;
-
-	if (message == MSG_PAINT) {
-		DrawBlock((Painter *) dp, bounds, 0xDDDDE0);
-	} else if (message == MSG_LAYOUT) {
-		fprintf(stderr, "layout B with bounds (%d->%d;%d->%d)\n", bounds.l, bounds.r, bounds.t, bounds.b);
-		ElementMove(elementC, RectangleMake(bounds.l - 40, bounds.l + 20, bounds.t + 40, bounds.b - 40), false);
-		ElementMove(elementD, RectangleMake(bounds.r - 20, bounds.r + 40, bounds.t + 40, bounds.b - 40), false);
-	}
-
-	return 0;
-}
-
-int ElementCMessage(Element *element, Message message, int di, void *dp) {
-	(void) di;
-
-	Rectangle bounds = element->bounds;
-
-	if (message == MSG_PAINT) {
-		DrawBlock((Painter *) dp, bounds, 0x3377FF);
-	} else if (message == MSG_LAYOUT) {
-		fprintf(stderr, "layout C with bounds (%d->%d;%d->%d)\n", bounds.l, bounds.r, bounds.t, bounds.b);
-	}
-
-	return 0;
-}
-
-int ElementDMessage(Element *element, Message message, int di, void *dp) {
-	(void) di;
-
-	Rectangle bounds = element->bounds;
-
-	if (message == MSG_PAINT) {
-		DrawBlock((Painter *) dp, bounds, 0x33CC33);
-	} else if (message == MSG_LAYOUT) {
-		fprintf(stderr, "layout D with bounds (%d->%d;%d->%d)\n", bounds.l, bounds.r, bounds.t, bounds.b);
+		fprintf(stderr, "layout with bounds (%d->%d;%d->%d)\n", element->bounds.l, element->bounds.r, element->bounds.t, element->bounds.b);
 	}
 
 	return 0;
@@ -562,13 +594,8 @@ int ElementDMessage(Element *element, Message message, int di, void *dp) {
 
 int main() {
 	Initialise();
-	Window *window = WindowCreate("Hello, world", 300, 200);
-	elementA = ElementCreate(sizeof(Element), &window->e, 0, ElementAMessage);
-	elementB = ElementCreate(sizeof(Element), elementA, 0, ElementBMessage);
-	elementC = ElementCreate(sizeof(Element), elementB, 0, ElementCMessage);
-	elementD = ElementCreate(sizeof(Element), elementB, 0, ElementDMessage);
+	Window *window = WindowCreate("Hello, world", 640, 480);
+	ElementCreate(sizeof(Element), &window->e, 0, MyElementMessage);
 	return MessageLoop();
 }
-
-// Add rendering.
 
