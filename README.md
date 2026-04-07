@@ -13,7 +13,7 @@ It is up to the user (of the library) to attach some elements to the window that
 
 ## Part 4: Messaging Infrastructure
 
-Do not use `_WindowMessage` for anything except the layout root element.
+Do not use `_WindowMessage` for anything except the root window element.
 Nakst will clarify the concept of "layouts" in later chapters but I've noticed the above.
 
 
