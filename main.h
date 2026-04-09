@@ -24,12 +24,16 @@
 ////////////////////////////////////
 //- Definitions
 
+#define UPDATE_HOVERED (1)
+
 enum Message
 {
 	// Framework Messages
 	//------------------
 	MSG_PAINT,			// dp = pointer to Painter
 	MSG_LAYOUT,
+	MSG_UPDATE, 		// di = UPDATE_... constant
+	MSG_MOUSE_MOVE,
 	//------------------
 
 	// User Messages
@@ -92,8 +96,9 @@ struct Window
 	Element e;
 	uint32_t *bits;		// The bitmap image of the window's content
 	int width, height;	// drawable size
+	Element *hovered;
+	int cursorX, cursorY;
 	Rectangle updateRegion;
-
 
 #if OS_WINDOWS
 	HWND hwnd;
@@ -132,6 +137,7 @@ Element *ElementCreate(size_t bytes, Element *parent, uint32_t flags, MessageHan
 void ElementRepaint(Element *element, Rectangle *region);
 void ElementMove(Element *element, Rectangle bounds, bool alwaysLayout);
 int ElementMessage(Element *element, Message message, int di, void *dp);
+Element *ElementFindByPoint(Element *element, int x, int y);
 
 ////////////////////////////////////
 //- Helpers

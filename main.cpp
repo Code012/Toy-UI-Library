@@ -38,6 +38,24 @@ void _ElementPaint(Element *element, Painter *painter)
 	}
 }
 
+
+Element *ElementFindByPoint(Element *element, int x, int y)
+{
+	// Assumption: Sibling elements cannot overlap (presumably to make this simpler).
+
+	// Check which child contains the point
+	for (uintptr_t i{}; i < element->childCount; ++i)
+	{
+		if (RectangleContains(element->children[i]->clip, x, y))
+		{
+			// Then find the deepest descendent element that contains the point.
+			return ElementFindByPoint(element->children[i], x, y);
+		}
+	}
+
+	return element;
+}
+
 void _Update()
 {
 	for (uintptr_t i = 0; i < global.windowCount; i++)
@@ -64,6 +82,31 @@ void _Update()
 			window->updateRegion = RectangleMake(0, 0, 0, 0);
 		}
 	}
+}
+
+void _WindowInputEvent(Window *window, Message message, int di, void *dp)
+{
+	// Find the element the mouse cursor is hovering over.
+	Element *hovered = ElementFindByPoint(&window->e, window->cursorX, window->cursorY);
+
+	// If this is a mouse move message, send the message to the hovered element
+	if (message == MSG_MOUSE_MOVE)
+	{
+		ElementMessage(hovered, MSG_MOUSE_MOVE, di, dp);
+	}
+
+	// Send an update event when a new element is hovered over
+	// this particular update event is a UPDATE_HOVERED event
+	if (hovered != window->hovered)
+	{
+		Element *previous = window->hovered;
+		window->hovered = hovered;
+		ElementMessage(previous, MSG_UPDATE, UPDATE_HOVERED, 0);
+		ElementMessage(window->hovered, MSG_UPDATE, UPDATE_HOVERED, 0);
+	}
+
+	// Process any queued repaints.
+	_Update();
 }
 
 // Invariant:  each element is responsible for the positioning of its children and nothing more.
@@ -362,6 +405,32 @@ LRESULT CALLBACK _WindowProcedure(HWND hwnd, UINT message, WPARAM wParam, LPARAM
 		ElementMessage(&window->e, MSG_LAYOUT, 0, 0);
 		_Update();
 	}
+	else if (message == WM_MOUSEMOVE)	// mouse moved inside the window
+	{
+		if (!window->trackingLeave)
+		{
+			window->trackingLeave = true;
+			TRACKMOUSEEVENT leave{};
+			leave.cbSize = sizeof(TRACKMOUSEEVENT);
+			leave.dwFlags = TME_LEAVE;
+			leave.hwndTrack = hwnd;
+			TrackMouseEvent(&leave);
+		}
+
+		POINT cursor;
+		GetCursorPos(&cursor);
+		ScreenToClient(hwnd, &cursor);
+		window->cursorX = cursor.x;
+		window->cursorY = cursor.y;
+		_WindowInputEvent(window, MSG_MOUSE_MOVE, 0, 0);
+	}
+	else if (message == WM_MOUSELEAVE)	// mouse leaves the window
+	{
+		window->trackingLeave = false;
+		window->cursorX = -1;
+		window->cursorY = -1;
+		_WindowInputEvent(window, MSG_MOUSE_MOVE, 0, 0);
+	}
 	else if (message == WM_PAINT)
 	{
 		PAINTSTRUCT paint;
@@ -422,6 +491,7 @@ Window *WindowCreate(const char *cTitle, int width, int height)
 {
 	// Window *window = (Window *) calloc(1, sizeof(Window));
 	Window *window = (Window *) ElementCreate(sizeof(Window), NULL, 0, _WindowMessage);
+	window->hovered = &window->e;
 	window->e.window = window;
 	global.windowCount++;
 	global.windows = (Window **)realloc(global.windows, sizeof(Window *) * global.windowCount);
@@ -496,6 +566,7 @@ int _WindowMessage(Element *element, Message message, int di, void *dp)
 Window *WindowCreate(const char *cTitle, int width, int height) {
 	// Window *window = (Window *) calloc(1, sizeof(Window));
 	Window *window = (Window *) ElementCreate(sizeof(Window), NULL, 0, _WindowMessage);
+	window->hovered = &window->e;
 	window->e.window = window;
 	global.windowCount++;
 	global.windows = realloc(global.windows, sizeof(Window *) * global.windowCount);
@@ -528,7 +599,7 @@ int MessageLoop() {
 			if (!window) continue;
 			XPutImage(global.display, window->window, DefaultGC(global.display, 0), 
 					window->image, 0, 0, 0, 0, window->width, window->height);
-		}else if (event.type == ConfigureNotify) {
+		} else if (event.type == ConfigureNotify) {
 			Window *window = _FindWindow(event.xconfigure.window);
 			if (!window) continue;
 
@@ -545,6 +616,18 @@ int MessageLoop() {
 				ElementMessage(&window->e, MSG_LAYOUT, 0, 0);
 				_Update();
 			}
+		} else if (event.type == MotionNotify) {
+			Window *window = _FindWindow(event.xmotion.window);
+			if (!window) continue;
+			window->cursorX = event.xmotion.x;
+			window->cursorY = event.xmotion.y;
+			_WindowInputEvent(window, MSG_MOUSE_MOVE, 0, 0);
+		} else if (event.type == LeaveNotify) {
+			Window *window = _FindWindow(event.xcrossing.window);
+			if (!window) continue;
+			window->cursorX = -1;
+			window->cursorY = -1;
+			_WindowInputEvent(window, MSG_MOUSE_MOVE, 0, 0);
 		}
 	}
 }
@@ -561,32 +644,32 @@ void Initialise() {
 //- Test Usage Code
 #include <stdio.h>
 
-int MyElementMessage(Element *element, Message message, int di, void *dp) {
-	(void) di;
+Element *parentElement, *childElement;
 
+int ParentElementMessage(Element *element, Message message, int di, void *dp) {
 	if (message == MSG_PAINT) {
 		DrawBlock((Painter *) dp, element->bounds, 0xFFCCFF);
-
-		for (int i = 0; i < 5; i++) {
-			for (int j = 0; j < 5; j++) {
-				DrawRectangle((Painter *) dp, RectangleMake(20 + j * 30, 40 + j * 30, 20 + i * 30, 40 + i * 30), 0xFFFFFF, 0x000000);
-			}
-		}
-
-		const char *message = "Hello, world!";
-
-		// Sillhouette for text
-		for (int i = -2; i <= 2; i++) {
-			for (int j = -2; j <= 2; j++) {
-				Rectangle rectangle = RectangleMake(element->bounds.l - j, element->bounds.r - j, 
-						element->bounds.t - i, element->bounds.b - i);
-				DrawString((Painter *) dp, rectangle, message, strlen(message), 0xFFFFFF, true);
-			}
-		}
-
-		DrawString((Painter *) dp, element->bounds, message, strlen(message), 0x000000, true);
 	} else if (message == MSG_LAYOUT) {
-		fprintf(stderr, "layout with bounds (%d->%d;%d->%d)\n", element->bounds.l, element->bounds.r, element->bounds.t, element->bounds.b);
+		fprintf(stderr, "layout parent with bounds (%d->%d;%d->%d)\n", element->bounds.l, element->bounds.r, element->bounds.t, element->bounds.b);
+		ElementMove(childElement, RectangleMake(50, 100, 50, 100), false);
+	} else if (message == MSG_MOUSE_MOVE) {
+		fprintf(stderr, "mouse move over parent at (%d,%d)\n", element->window->cursorX, element->window->cursorY);
+	} else if (message == MSG_UPDATE) {
+		fprintf(stderr, "update parent %d\n", di);
+	}
+
+	return 0;
+}
+
+int ChildElementMessage(Element *element, Message message, int di, void *dp) {
+	if (message == MSG_PAINT) {
+		DrawBlock((Painter *) dp, element->bounds, 0x444444);
+	} else if (message == MSG_LAYOUT) {
+		fprintf(stderr, "layout child with bounds (%d->%d;%d->%d)\n", element->bounds.l, element->bounds.r, element->bounds.t, element->bounds.b);
+	} else if (message == MSG_MOUSE_MOVE) {
+		fprintf(stderr, "mouse move over child at (%d,%d)\n", element->window->cursorX, element->window->cursorY);
+	} else if (message == MSG_UPDATE) {
+		fprintf(stderr, "update child %d\n", di);
 	}
 
 	return 0;
@@ -594,8 +677,8 @@ int MyElementMessage(Element *element, Message message, int di, void *dp) {
 
 int main() {
 	Initialise();
-	Window *window = WindowCreate("Hello, world", 640, 480);
-	ElementCreate(sizeof(Element), &window->e, 0, MyElementMessage);
+	Window *window = WindowCreate("Hello, world", 300, 200);
+	parentElement = ElementCreate(sizeof(Element), &window->e, 0, ParentElementMessage);
+	childElement = ElementCreate(sizeof(Element), parentElement, 0, ChildElementMessage);
 	return MessageLoop();
 }
-
