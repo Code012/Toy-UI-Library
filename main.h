@@ -24,7 +24,8 @@
 ////////////////////////////////////
 //- Definitions
 
-#define UPDATE_HOVERED (1)
+#define UPDATE_HOVERED (1)	// when an element starts and stops being hovered
+#define UPDATE_PRESSED (2)	// when an element starts and stops being pressed
 
 enum Message
 {
@@ -33,7 +34,15 @@ enum Message
 	MSG_PAINT,			// dp = pointer to Painter
 	MSG_LAYOUT,
 	MSG_UPDATE, 		// di = UPDATE_... constant
+	MSG_LEFT_DOWN,   	// Left mouse button pressed. (Sent to the element the mouse cursor is over.)
+	MSG_LEFT_UP,     	// Left mouse button released. (Sent to the element MSG_LEFT_DOWN was sent to.)
+	MSG_MIDDLE_DOWN, 	// Middle mouse button pressed. (Sent to the element the mouse cursor is over.)
+	MSG_MIDDLE_UP,   	// Middle mouse button released. (Sent to the element MSG_MIDDLE_DOWN was sent to.)
+	MSG_RIGHT_DOWN,  	// Right mouse button pressed. (Sent to the element the mouse cursor is over.)
+	MSG_RIGHT_UP,    	// Right mouse button released. (Sent to the element MSG_RIGHT_DOWN was sent to.)
 	MSG_MOUSE_MOVE,
+	MSG_MOUSE_DRAG,  	// Mouse moved while holding buttons. (Sent to the element MSG_*_DOWN was sent to.)
+	MSG_CLICKED,     	// Left mouse button released while hovering over the element that MSG_LEFT_UP was sent to.
 	//------------------
 
 	// User Messages
@@ -96,7 +105,8 @@ struct Window
 	Element e;
 	uint32_t *bits;		// The bitmap image of the window's content
 	int width, height;	// drawable size
-	Element *hovered;
+	Element *hovered, *pressed;
+	int pressedButton; 	// 1 = left, 2 = middle, 3 = right
 	int cursorX, cursorY;
 	Rectangle updateRegion;
 
