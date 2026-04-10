@@ -1,5 +1,14 @@
 /*  date = December 25th 2025 08:54 PM */ 
 // main.h
+
+/*
+
+Cool ideas for a UI library:
+- Add string to common element header that screen readers could use. Windows uses Microsoft UI Automation.
+.
+*/
+
+
 #include <stdint.h>
 #include <stddef.h>
 #include <cstring>
@@ -43,6 +52,8 @@ enum Message
 	MSG_MOUSE_MOVE,
 	MSG_MOUSE_DRAG,  	// Mouse moved while holding buttons. (Sent to the element MSG_*_DOWN was sent to.)
 	MSG_CLICKED,     	// Left mouse button released while hovering over the element that MSG_LEFT_UP was sent to.
+
+	MSG_BUTTON_GET_COLOR,	// Allow buttons to query their own colour
 	//------------------
 
 	// User Messages
@@ -88,6 +99,11 @@ struct Painter
 typedef int (*MessageHandler)(struct Element *element, Message message, int di, void *dp);
 
 
+// NOTE(sb): We might want to move the text mangement stuff (from button and label) into the common Element header,
+// but Nakst doesn't think this is necessary. Buttons and Labels are really the only place where this all happens.
+// Possible textboxes too, but they are often too specialised. Other elements like panels, sliders, list views simple
+// don't have a single text string they're associated with. That said, Nakst says you could add a description string
+// to the common element header that screen readers could use.
 struct Element
 {
 	uint32_t flags;			// First 16 bits are specific to the type of element (button, label, etc.). The higher order 16 bits are common to all elements.
@@ -98,6 +114,31 @@ struct Element
 	struct Window *window;	// Window at the root of the heirarchy
 	void *cp;				// Context pointer (for the user of the library)
 	MessageHandler messageClass, messageUser;	// messageClass: class handler, default behaviour; messageUser: optional override
+};
+
+struct Button
+{
+	// Element header for type erasure
+	// We pass Button around as Element* (erasing the concrete type): &button->e
+	// then later cast back to Button* when we know what it really is
+	// This works because &button->e == (Element*)button (same address). Because e is the first member.
+	// Look at cast in _ButtonMessage
+	Element e;
+	char *text;
+	size_t textBytes;
+};
+
+struct Label
+{
+#define LABEL_CENTRE (1 << 0)
+	// Element header for type erasure
+	// We pass Label around as Element* (erasing the concrete type): &label->e
+	// then later cast back to Label* when we know what it really is
+	// This works because &label->e == (Element*)label (same address). Because e is the first member.
+	// Look at cast in _LabelMessage
+	Element e;
+	char *text;
+	size_t textBytes;
 };
 
 struct Window
@@ -139,7 +180,6 @@ struct GlobalState
 void Initialise();
 int MessageLoop();
 Window *WindowCreate(const char *cTitle, int width, int height);
-
 ////////////////////////////////////
 //- Core UI Logic
 
@@ -148,7 +188,10 @@ void ElementRepaint(Element *element, Rectangle *region);
 void ElementMove(Element *element, Rectangle bounds, bool alwaysLayout);
 int ElementMessage(Element *element, Message message, int di, void *dp);
 Element *ElementFindByPoint(Element *element, int x, int y);
-
+Button *ButtonCreate(Element *parent, uint32_t flags /* by convention all element creation functions start with these 2 parameters*/,
+					const char *label, ptrdiff_t labelBytes);
+Label *LabelCreate(Element *parent, uint32_t flags, const char *label, ptrdiff_t labelBytes);
+void LabelSetContent(Label *code, const char *content, ptrdiff_t byteCount);
 ////////////////////////////////////
 //- Helpers
 

@@ -309,6 +309,71 @@ Element *ElementCreate(size_t bytes, Element *parent, uint32_t flags, MessageHan
 }
 
 
+
+//- Buttons and Labels
+
+
+int _ButtonMessage(Element *element, Message message, int di, void *dp)
+{
+	Button *button = (Button *) element;
+	(void) di;
+
+	if (message == MSG_PAINT)
+	{
+		Painter *painter = (Painter *) dp;
+
+		// The button should appear pressed if the mouse cursor is hovering over it and is pressing down on it.
+		// That is, precisely the conditions needed to get MSG_CLICKED to fire when the mouse button is released.
+		bool pressed = element->window->pressed == element && element->window->hovered == element;
+		uint32_t c = 0xFFFFFF;
+		ElementMessage(element, MSG_BUTTON_GET_COLOR, 0, &c);	// button can query its own colour
+		uint32_t c1 = pressed ? 0xFFFFFF : 0x000000, c2 = pressed ? 0x000000 : c;
+
+		// Draw a rectangle in the button's bounds, and draw the label text centred in the bounds.
+		DrawRectangle(painter, element->bounds, c2, c1);
+		DrawString(painter, element->bounds, button->text, button->textBytes, c1, true);
+	}
+	else if (message == MSG_UPDATE)
+	{
+		// Queue the entire button to be repainted
+		ElementRepaint(element, nullptr);
+	}
+
+	return 0;
+} 
+
+Button *ButtonCreate(Element *parent, uint32_t flags, /* by convention, all element creation functions start with these 2 parameters */
+		const char *text /* the button's label */, ptrdiff_t textBytes /* -1 indicates a zero terminated string */)
+{
+	Button *button = (Button *) ElementCreate(sizeof(Button), parent, flags, _ButtonMessage);
+	StringCopy(&button->text, &button->textBytes, text, textBytes);
+	return button;
+}
+
+int _LabelMessage(Element *element, Message message, int di, void *dp)
+{
+	Label *label = (Label *) element;
+
+	if (message == MSG_PAINT)
+	{
+		DrawString((Painter *) dp, element->bounds, label->text, label->textBytes, 0x000000, false);
+	}
+
+	return 0;
+}
+
+Label *LabelCreate(Element *parent, uint32_t flags, const char *text, ptrdiff_t textBytes) 
+{
+	Label *label = (Label *) ElementCreate(sizeof(Label), parent, flags, _LabelMessage);
+	StringCopy(&label->text, &label->textBytes, text, textBytes);
+	return label;
+}
+
+void LabelSetContent(Label *label, const char *text, ptrdiff_t textBytes)
+{
+	StringCopy(&label->text, &label->textBytes, text, textBytes);
+}
+
 ////////////////////////////////////
 //- Helpers
 Rectangle RectangleMake(int l, int r, int t, int b)
@@ -468,6 +533,10 @@ void DrawString(Painter *painter, Rectangle bounds, const char *string, size_t b
 	// Restore the old clipping region.
 	painter->clip = oldClip;
 }
+
+
+
+
 ////////////////////////////////////
 //- Platform code
 
@@ -789,53 +858,51 @@ void Initialise() {
 //- Test Usage Code
 #include <stdio.h>
 
-Element *parentElement, *childElement;
 
-int ParentElementMessage(Element *element, Message message, int di, void *dp) {
-	if (message == MSG_PAINT) {
+Button *myButton;
+Label *myLabel;
+int counter = 0;
+
+void UpdateLabel() {
+	char buffer[50];
+	snprintf(buffer, sizeof(buffer), "Click count: %d", counter);
+	LabelSetContent(myLabel, buffer, -1);
+	ElementRepaint(&myLabel->e, NULL);
+}
+
+int LayoutElementMessage(Element *element, Message message, int di, void *dp) {
+	(void) di;
+
+	if (message == MSG_LAYOUT) {
+		ElementMove(&myButton->e, RectangleMake(10, 200, 10, 40), false);
+		ElementMove(&myLabel->e, RectangleMake(10, element->bounds.r - 10, 50, 90), false);
+	} else if (message == MSG_PAINT) {
 		DrawBlock((Painter *) dp, element->bounds, 0xFFCCFF);
-	} else if (message == MSG_LAYOUT) {
-		fprintf(stderr, "layout with bounds (%d->%d;%d->%d)\n", element->bounds.l, element->bounds.r, element->bounds.t, element->bounds.b);
-		ElementMove(childElement, RectangleMake(50, 100, 50, 100), false);
-	} else if (message == MSG_MOUSE_MOVE) {
-		fprintf(stderr, "mouse move at (%d,%d)\n", element->window->cursorX, element->window->cursorY);
-	} else if (message == MSG_MOUSE_DRAG) {
-		fprintf(stderr, "mouse drag at (%d,%d)\n", element->window->cursorX, element->window->cursorY);
-	} else if (message == MSG_UPDATE) {
-		fprintf(stderr, "update %d\n", di);
-	} else if (message == MSG_LEFT_DOWN) {
-		fprintf(stderr, "left down\n");
-	} else if (message == MSG_RIGHT_DOWN) {
-		fprintf(stderr, "right down\n");
-	} else if (message == MSG_MIDDLE_DOWN) {
-		fprintf(stderr, "middle down\n");
-	} else if (message == MSG_LEFT_UP) {
-		fprintf(stderr, "left up\n");
-	} else if (message == MSG_RIGHT_UP) {
-		fprintf(stderr, "right up\n");
-	} else if (message == MSG_MIDDLE_UP) {
-		fprintf(stderr, "middle up\n");
-	} else if (message == MSG_CLICKED) {
-		fprintf(stderr, "clicked\n");
 	}
 
 	return 0;
 }
 
-int ChildElementMessage(Element *element, Message message, int di, void *dp) {
+int MyButtonMessage(Element *element, Message message, int di, void *dp) {
+	(void) element;
 	(void) di;
+	(void) dp;
 
-	if (message == MSG_PAINT) {
-		DrawBlock((Painter *) dp, element->bounds, 0x444444);
+	if (message == MSG_CLICKED) {
+		counter++;
+		UpdateLabel();
 	}
-
+	
 	return 0;
 }
 
 int main() {
 	Initialise();
 	Window *window = WindowCreate("Hello, world", 300, 200);
-	parentElement = ElementCreate(sizeof(Element), &window->e, 0, ParentElementMessage);
-	childElement = ElementCreate(sizeof(Element), parentElement, 0, ChildElementMessage);
+	Element *layoutElement = ElementCreate(sizeof(Element), &window->e, 0, LayoutElementMessage);
+	myButton = ButtonCreate(layoutElement, 0, "Increment counter", -1);
+	myButton->e.messageUser = MyButtonMessage;
+	myLabel = LabelCreate(layoutElement, LABEL_CENTRE, NULL, 0);
+	UpdateLabel();
 	return MessageLoop();
 }
